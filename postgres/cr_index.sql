@@ -44,16 +44,15 @@ CREATE INDEX idx_uk_price_paid_part_date_brin ON uk_price_paid_pg_part
 -- ============================================================
 
 -- Update statistics for query planner
-ANALYZE uk_price_paid_pg;
-ANALYZE uk_price_paid_pg_part;
+ANALYZE (VERBOSE) uk_price_paid_pg;
+ANALYZE (VERBOSE) uk_price_paid_pg_part;
 
 -- Verify indexes were created
 SELECT 
     schemaname,
     tablename,
     indexname,
-    pg_size_pretty(pg_relation_size(indexrelid)) AS index_size
+    pg_size_pretty(pg_relation_size(indexname::regclass)) AS index_size
 FROM pg_indexes
-JOIN pg_class ON pg_class.relname = indexname
 WHERE tablename IN ('uk_price_paid_pg', 'uk_price_paid_pg_part')
 ORDER BY tablename, indexname;
