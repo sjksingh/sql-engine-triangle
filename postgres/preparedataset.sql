@@ -67,12 +67,7 @@ CREATE TABLE uk_price_paid_pg_part (
     town VARCHAR(100) NOT NULL,
     district VARCHAR(100) NOT NULL,
     county VARCHAR(100) NOT NULL
-) PARTITION BY RANGE (date)
-WITH (
-    fillfactor = 90,
-    autovacuum_vacuum_scale_factor = 0.05,
-    autovacuum_analyze_scale_factor = 0.02
-);
+) PARTITION BY RANGE (date);
 
 -- Create initial partitions using pg_partman (creates 2021-2029 by default)
 SELECT public.create_parent(
