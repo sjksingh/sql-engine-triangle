@@ -220,6 +220,11 @@ CREATE INDEX IF NOT EXISTS idx_cedar_town ON uk_price_paid_ingest(town);
 CREATE INDEX IF NOT EXISTS idx_cedar_type ON uk_price_paid_ingest(type);
 CREATE INDEX IF NOT EXISTS idx_cedar_date_type ON uk_price_paid_ingest(date, type);
 CREATE INDEX IF NOT EXISTS idx_cedar_town_date ON uk_price_paid_ingest(town, date);
+-- Analyze for query planner
+ANALYZE uk_price_paid_ingest;
+
+-- Check the result
+SELECT COUNT(*) FROM uk_price_paid_ingest;
 SQL
 ```
 
