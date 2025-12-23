@@ -246,7 +246,7 @@ SQL
 
 ---
 
-## Step 5 – Stream ClickHouse → CedarDB (zero intermediate files)
+## Step 5 – Stream ClickHouse → CedarDB 
 
 ```bash
 docker exec clickhouse_server \
@@ -285,6 +285,7 @@ PGPASSWORD=cedardbre psql -h localhost -p 5433 -U postgres -d postgres \
 ## Step 6 – Create PostgreSQL HEAP table
 
 ```sql
+PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
 DROP TABLE IF EXISTS uk_price_paid_pg;
 
 CREATE TABLE uk_price_paid_pg (
@@ -303,11 +304,13 @@ CREATE TABLE uk_price_paid_pg (
     district VARCHAR(100),
     county VARCHAR(100)
 );
+SQL
 ```
 
 Populate from ClickHouse FDW:
 
 ```sql
+PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
 INSERT INTO uk_price_paid_pg
 SELECT
     price,
@@ -325,6 +328,7 @@ SELECT
     district,
     county
 FROM uk_price_paid;
+SQL
 ```
 
 ---
@@ -334,6 +338,7 @@ FROM uk_price_paid;
 ### PostgreSQL HEAP
 
 ```sql
+PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
 CREATE INDEX idx_pg_date ON uk_price_paid_pg(date);
 CREATE INDEX idx_pg_town ON uk_price_paid_pg(town);
 CREATE INDEX idx_pg_type ON uk_price_paid_pg(type);
@@ -345,11 +350,13 @@ CREATE INDEX idx_pg_county_type_date ON uk_price_paid_pg(county, type, date)
 WHERE county IS NOT NULL;
 
 ANALYZE uk_price_paid_pg;
+SQL
 ```
 
 ### CedarDB
 
 ```sql
+PGPASSWORD=cedardbre psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
 CREATE INDEX idx_cedar_date ON uk_price_paid_ingest(date);
 CREATE INDEX idx_cedar_town ON uk_price_paid_ingest(town);
 CREATE INDEX idx_cedar_type ON uk_price_paid_ingest(type);
@@ -357,6 +364,7 @@ CREATE INDEX idx_cedar_date_type ON uk_price_paid_ingest(date, type);
 CREATE INDEX idx_cedar_town_date ON uk_price_paid_ingest(town, date);
 
 ANALYZE uk_price_paid_ingest;
+SQL
 ```
 
 ---
