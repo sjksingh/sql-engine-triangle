@@ -1,285 +1,56 @@
-# SQL Engine Triangle – OLAP Benchmark
+# Query 4 – Top-K Counties with Percentiles
 
-This repository benchmarks **ClickHouse, CedarDB, PostgreSQL HEAP, and PostgreSQL + pg_clickhouse FDW** using the **same dataset**, same cardinality, and same distributions.  
-The goal is to compare **execution architectures** across:
+## Purpose
 
-1. Columnar (ClickHouse)
-2. Row-based + modern MVCC (CedarDB)
-3. PostgreSQL executor pushing down to ClickHouse (FDW)
-4. PostgreSQL classic HEAP
+This query benchmarks **complex analytics** combining:
 
-We focus on four representative analytical queries.
+- Top-K subqueries (`LIMIT 10`)
+- Join between derived set and large fact table
+- Percentile computation (`PERCENTILE_CONT` / `quantileTDigest`)
+- Multi-column group-by and ordered results
+
+This pattern is common in:
+
+- Regional analytics dashboards
+- Advanced BI reports
+- Statistical summaries with percentiles
+- Performance comparison of OLAP engines
 
 ---
 
-## Query 1 – Aggregation by Property Type
+## Query intent (logical)
 
-### Purpose
-Aggregate UK house prices by property type since 2020, ordered by average price.  
-This tests **basic group aggregation** and **executor performance**.
+> For the top 10 counties by transaction volume since 2020, compute **per property type**:
 
-### PostgreSQL – HEAP
+- Total transactions
+- Average price
+- Percentiles (25%, 50%, 75%, 95%)
+
+---
+
+## What this query stresses
+
+- Materialization of derived sets (top-K)
+- Join performance with large fact table
+- Windowed percentile aggregation
+- Executor and buffer management under high cardinality
+- Differences between exact vs approximate percentile calculation
+
+This query is intentionally **high-stress**, exposing the real differences between execution architectures.
+
+---
+
+## PostgreSQL – Native HEAP
+
+**Engine**
+
+- PostgreSQL 18.1
+- B-tree indexes: `(county, type, date)`
+- Full MVCC visibility checks
+
+### SQL
 
 ```sql
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT 
-    type,
-    COUNT(*) AS transactions,
-    ROUND(AVG(price)) AS avg_price,
-    ROUND(MIN(price)) AS min_price,
-    ROUND(MAX(price)) AS max_price
-FROM uk_price_paid_pg
-WHERE date >= '2020-01-01'
-GROUP BY type
-ORDER BY avg_price DESC;
-Execution time: ~800 ms
-📄 Full plan: postgres-q1.plan.txt
-
-CedarDB
-sql
-Copy code
-EXPLAIN (ANALYZE)
-SELECT 
-    type,
-    COUNT(*) AS transactions,
-    ROUND(AVG(price)) AS avg_price,
-    ROUND(MIN(price)) AS min_price,
-    ROUND(MAX(price)) AS max_price
-FROM uk_price_paid_ingest
-WHERE date >= '2020-01-01'
-GROUP BY type
-ORDER BY avg_price DESC;
-Execution time: ~60 ms
-📄 Full plan: cedar-q1.plan.txt
-
-PostgreSQL + FDW
-sql
-Copy code
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT 
-    type,
-    COUNT(*) AS transactions,
-    ROUND(AVG(price)) AS avg_price,
-    ROUND(MIN(price)) AS min_price,
-    ROUND(MAX(price)) AS max_price
-FROM uk_price_paid
-WHERE date >= '2020-01-01'
-GROUP BY type
-ORDER BY avg_price DESC;
-Execution time: ~50–60 ms
-📄 Full plan: fdw-q1.plan.txt
-
-ClickHouse
-sql
-Copy code
-EXPLAIN PIPELINE
-SELECT 
-    type,
-    COUNT(*) AS transactions,
-    round(AVG(price)) AS avg_price,
-    round(MIN(price)) AS min_price,
-    round(MAX(price)) AS max_price
-FROM uk_price_paid
-WHERE date >= '2020-01-01'
-GROUP BY type
-ORDER BY avg_price DESC;
-Execution time: ~15–20 ms
-📄 Full pipeline: clickhouse-q1.plan.txt
-
-Query 2 – Time-bucketed Aggregation by City
-Purpose
-Compute monthly transactions and average prices for a fixed set of cities since 2020.
-This tests time bucketing, grouping, and sort.
-
-PostgreSQL – HEAP
-sql
-Copy code
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT
-    town,
-    DATE_TRUNC('month', date) AS month,
-    COUNT(*) AS transactions,
-    ROUND(AVG(price)) AS avg_price
-FROM uk_price_paid_pg
-WHERE town IN ('LONDON','MANCHESTER','BRISTOL','BIRMINGHAM','NOTTINGHAM')
-  AND date >= '2020-01-01'
-GROUP BY town, DATE_TRUNC('month', date)
-ORDER BY town, month;
-Execution time: ~690 ms
-📄 Full plan: postgres-q2.plan.txt
-
-CedarDB
-sql
-Copy code
-EXPLAIN (ANALYZE)
-SELECT
-    town,
-    DATE_TRUNC('month', date) AS month,
-    COUNT(*) AS transactions,
-    ROUND(AVG(price)) AS avg_price
-FROM uk_price_paid_ingest
-WHERE town IN ('LONDON','MANCHESTER','BRISTOL','BIRMINGHAM','NOTTINGHAM')
-  AND date >= '2020-01-01'
-GROUP BY town, DATE_TRUNC('month', date)
-ORDER BY town, month;
-Execution time: ~30 ms
-📄 Full plan: cedar-q2.plan.txt
-
-PostgreSQL + FDW
-sql
-Copy code
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT
-    town,
-    DATE_TRUNC('month', date) AS month,
-    COUNT(*) AS transactions,
-    ROUND(AVG(price)) AS avg_price
-FROM uk_price_paid
-WHERE town IN ('LONDON','MANCHESTER','BRISTOL','BIRMINGHAM','NOTTINGHAM')
-  AND date >= '2020-01-01'
-GROUP BY town, DATE_TRUNC('month', date)
-ORDER BY town, month;
-Execution time: ~50 ms
-📄 Full plan: fdw-q2.plan.txt
-
-ClickHouse
-sql
-Copy code
-EXPLAIN PIPELINE
-SELECT
-    town,
-    DATE_TRUNC('month', date) AS month,
-    COUNT(*) AS transactions,
-    ROUND(AVG(price)) AS avg_price
-FROM uk_price_paid
-WHERE town IN ('LONDON','MANCHESTER','BRISTOL','BIRMINGHAM','NOTTINGHAM')
-  AND date >= '2020-01-01'
-GROUP BY town, DATE_TRUNC('month', date)
-ORDER BY town, month;
-Execution time: ~13 ms
-📄 Full pipeline: clickhouse-q2.plan.txt
-
-Query 3 – Year-over-Year Analytics with Window Functions
-Purpose
-Compute yearly average prices per type since 2015, with YoY change and percentage.
-This tests window function performance over large aggregations.
-
-PostgreSQL – HEAP
-sql
-Copy code
-EXPLAIN (ANALYZE, BUFFERS)
-WITH yearly_avg AS (
-    SELECT
-        EXTRACT(YEAR FROM date) AS year,
-        type,
-        AVG(price) AS avg_price,
-        COUNT(*) AS transactions
-    FROM uk_price_paid_pg
-    WHERE date >= '2015-01-01'
-    GROUP BY EXTRACT(YEAR FROM date), type
-)
-SELECT
-    year,
-    type,
-    ROUND(avg_price) AS avg_price,
-    transactions,
-    ROUND(avg_price - LAG(avg_price) OVER (PARTITION BY type ORDER BY year)) AS yoy_change,
-    ROUND(100.0 * (avg_price - LAG(avg_price) OVER (PARTITION BY type ORDER BY year)) /
-          LAG(avg_price) OVER (PARTITION BY type ORDER BY year), 2) AS yoy_pct
-FROM yearly_avg
-ORDER BY type, year;
-Execution time: ~2.5 s
-📄 Full plan: postgres-q3.plan.txt
-
-CedarDB
-sql
-Copy code
-EXPLAIN (ANALYZE)
-WITH yearly_avg AS (
-    SELECT
-        EXTRACT(YEAR FROM date) AS year,
-        type,
-        AVG(price) AS avg_price,
-        COUNT(*) AS transactions
-    FROM uk_price_paid_ingest
-    WHERE date >= '2015-01-01'
-    GROUP BY EXTRACT(YEAR FROM date), type
-)
-SELECT
-    year,
-    type,
-    ROUND(avg_price) AS avg_price,
-    transactions,
-    ROUND(avg_price - LAG(avg_price) OVER (PARTITION BY type ORDER BY year)) AS yoy_change,
-    ROUND(100.0 * (avg_price - LAG(avg_price) OVER (PARTITION BY type ORDER BY year)) /
-          LAG(avg_price) OVER (PARTITION BY type ORDER BY year), 2) AS yoy_pct
-FROM yearly_avg
-ORDER BY type, year;
-Execution time: ~110 ms
-📄 Full plan: cedar-q3.plan.txt
-
-PostgreSQL + FDW
-sql
-Copy code
-EXPLAIN (ANALYZE, BUFFERS)
-WITH yearly_avg AS (
-    SELECT
-        EXTRACT(YEAR FROM date) AS year,
-        type,
-        AVG(price) AS avg_price,
-        COUNT(*) AS transactions
-    FROM uk_price_paid
-    WHERE date >= '2015-01-01'
-    GROUP BY EXTRACT(YEAR FROM date), type
-)
-SELECT
-    year,
-    type,
-    ROUND(avg_price) AS avg_price,
-    transactions,
-    ROUND(avg_price - LAG(avg_price) OVER (PARTITION BY type ORDER BY year)) AS yoy_change,
-    ROUND(100.0 * (avg_price - LAG(avg_price) OVER (PARTITION BY type ORDER BY year)) /
-          LAG(avg_price) OVER (PARTITION BY type ORDER BY year), 2) AS yoy_pct
-FROM yearly_avg
-ORDER BY type, year;
-Execution time: ~100 ms
-📄 Full plan: fdw-q3.plan.txt
-
-ClickHouse
-sql
-Copy code
-EXPLAIN PIPELINE
-WITH yearly_avg AS (
-    SELECT
-        toYear(date) AS year,
-        type,
-        AVG(price) AS avg_price,
-        COUNT(*) AS transactions
-    FROM uk_price_paid
-    WHERE date >= '2015-01-01'
-    GROUP BY toYear(date), type
-)
-SELECT
-    year,
-    type,
-    ROUND(avg_price) AS avg_price,
-    transactions,
-    ROUND(avg_price - LAG(avg_price) OVER (PARTITION BY type ORDER BY year)) AS yoy_change,
-    ROUND(100.0 * (avg_price - LAG(avg_price) OVER (PARTITION BY type ORDER BY year)) /
-          LAG(avg_price) OVER (PARTITION BY type ORDER BY year), 2) AS yoy_pct
-FROM yearly_avg
-ORDER BY type, year;
-Execution time: ~25 ms
-📄 Full pipeline: clickhouse-q3.plan.txt
-
-Query 4 – Top-K Counties with Percentiles
-Purpose
-For the top 10 counties by transaction volume, compute per-type transactions, average, and percentiles.
-This stresses top-K joins + percentile computation.
-
-PostgreSQL – HEAP
-sql
-Copy code
 EXPLAIN (ANALYZE, BUFFERS)
 WITH top_counties AS (
     SELECT county, COUNT(*) AS cnt
@@ -303,17 +74,40 @@ INNER JOIN top_counties tc ON p.county = tc.county
 WHERE p.date >= '2020-01-01'
 GROUP BY p.county, p.type
 ORDER BY p.county, p.type;
-Execution time: ~4.3 s
+Observed plan highlights
+Hash join between top-K CTE and main table
+
+External merge sort on (county, type) → temp spill ~77 MB
+
+Heavy buffer usage (~4.2M reads)
+
+Parallel partial + final aggregates
+
+JIT compilation for aggregate expressions
+
 📄 Full plan: postgres-q4.plan.txt
+⏱ Execution time: ~4.3 s
+
+Correct, robust, but heavy on executor and temp I/O.
 
 CedarDB
+Engine
+
+CedarDB v2025-12-19
+
+Row-based, modern MVCC
+
+Minimal indexing
+
+SQL
 sql
 Copy code
 EXPLAIN (ANALYZE)
 WITH filtered AS (
     SELECT *
     FROM uk_price_paid_ingest
-    WHERE county IS NOT NULL AND date >= '2020-01-01'
+    WHERE county IS NOT NULL
+      AND date >= '2020-01-01'
 ),
 top_counties AS (
     SELECT county
@@ -335,17 +129,36 @@ FROM filtered p
 JOIN top_counties tc USING (county)
 GROUP BY p.county, p.type
 ORDER BY p.county, p.type;
-Execution time: ~913 ms
-📄 Full plan: cedar-q4.plan.txt
+Observed plan highlights
+Single scan of the fact table
 
-PostgreSQL + FDW
+In-memory group-by
+
+Hash join
+
+Percentile computation integrated in memory
+
+Minimal IO and no spill
+
+📄 Full plan: cedar-q4.plan.txt
+⏱ Execution time: ~913 ms
+
+CedarDB handles multi-stage analytics efficiently without executor drag.
+
+PostgreSQL + pg_clickhouse (FDW Pushdown)
+Engine
+
+PostgreSQL 18 + pg_clickhouse FDW
+
+SQL
 sql
 Copy code
 EXPLAIN (ANALYZE, BUFFERS)
 WITH filtered AS (
     SELECT *
     FROM uk_price_paid
-    WHERE county IS NOT NULL AND date >= '2020-01-01'
+    WHERE county IS NOT NULL
+      AND date >= '2020-01-01'
 ),
 top_counties AS (
     SELECT county
@@ -367,17 +180,38 @@ FROM filtered p
 JOIN top_counties tc USING (county)
 GROUP BY p.county, p.type
 ORDER BY p.county, p.type;
-Execution time: ~20.7 s
+Observed plan highlights
+Filtered CTE materialized in PostgreSQL
+
+Join + percentile done in PostgreSQL
+
+FDW pushdown handles raw table scan
+
+Significant temp I/O (~83 MB) and disk usage
+
 📄 Full plan: fdw-q4.plan.txt
+⏱ Execution time: ~20.7 s
+
+Demonstrates FDW limits on multi-stage analytics with percentiles.
 
 ClickHouse
+Engine
+
+ClickHouse 25.12
+
+MergeTree
+
+Columnar + vectorized + pipeline execution
+
+SQL
 sql
 Copy code
 EXPLAIN PIPELINE
 WITH top_counties AS (
     SELECT county
     FROM uk_price_paid
-    WHERE county IS NOT NULL AND date >= '2020-01-01'
+    WHERE county IS NOT NULL
+      AND date >= '2020-01-01'
     GROUP BY county
     ORDER BY COUNT(*) DESC
     LIMIT 10
@@ -394,16 +228,42 @@ SELECT
 FROM uk_price_paid AS p
 INNER JOIN top_counties AS tc ON p.county = tc.county
 WHERE p.date >= '2020-01-01'
-GROUP BY p.county, p.type
-ORDER BY p.county, p.type;
-Execution time: ~27 ms
+GROUP BY
+    p.county,
+    p.type
+ORDER BY
+    p.county ASC,
+    p.type ASC;
+Observed pipeline highlights
+Full pipeline aggregation + join
+
+Vectorized percentile computation with TDigest
+
+Minimal memory overhead
+
+Fast multi-stage processing
+
 📄 Full pipeline: clickhouse-q4.plan.txt
+⏱ Execution time: ~27 ms
 
-Key Takeaways Across All Queries
-PostgreSQL HEAP is correct and flexible but suffers with multi-stage analytics and high cardinality.
+Columnar pipeline and approximate TDigest aggregation make ClickHouse extremely fast.
 
-CedarDB minimizes executor overhead and provides very fast row-based analytics.
+Summary (qualitative)
+Engine	Strength shown in Query 4	Main cost driver
+PostgreSQL HEAP	Full SQL, exact percentiles	Executor + temp I/O + window overhead
+CedarDB	Fast in-memory analytics	Scan + hash join
+pg_clickhouse (FDW)	Full SQL via pushdown, limited aggregation	Temp spill + CTE materialization
+ClickHouse	High-throughput percentiles + top-K	CPU-efficient columnar + TDigest pipelines
 
-FDW pushdown leverages ClickHouse execution but can be slower when temp materialization occurs.
+Key takeaway
+Query 4 clearly illustrates:
 
-ClickHouse excels in columnar, pipelined, vectorized analytics and approximate percentile computations.
+Top-K and percentile analytics are expensive in row-based systems
+
+CedarDB minimizes executor overhead, producing fast analytics
+
+FDW pushdown can be slower than native execution due to temp materialization
+
+ClickHouse columnar engine achieves extreme throughput with pipelined, approximate aggregates
+
+This is the climax of the benchmark suite, showing the largest architectural differences between engines.
