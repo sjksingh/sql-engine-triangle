@@ -12,7 +12,32 @@ pg18_clickhouse     sjksingh/postgres-18-pgclickhouse-cedar:latest   "/custom-en
 
 
 # 1 - ingest data into clickhouse. 
+
 bash 1-lickhuse-ingest.sh
+
+```
+#!/bin/bash
+# clickhouse_ingest.sh
+# Stream UK price paid CSV into ClickHouse
+
+set -euo pipefail
+
+# Config
+CLICKHOUSE_CONTAINER=${CLICKHOUSE_CONTAINER:-clickhouse_server}
+CSV_GZ_FILE=${CSV_GZ_FILE:-uk_price_paid.csv.gz}
+TABLE=${TABLE:-default.uk_price_paid}
+
+echo "Starting ClickHouse ingestion..."
+echo "Container: $CLICKHOUSE_CONTAINER"
+echo "CSV file: $CSV_GZ_FILE"
+echo "Table: $TABLE"
+
+# Stream CSV.gz directly into ClickHouse
+zcat "$CSV_GZ_FILE" | docker exec -i "$CLICKHOUSE_CONTAINER" \
+    clickhouse-client --query "INSERT INTO $TABLE FORMAT CSV"
+
+echo "ClickHouse ingestion completed!"
+```
 
 Verify - should return 30 millon rows 
 
