@@ -121,7 +121,7 @@ pg18_clickhouse
 
 ---
 
-## Step 1 – Validate ClickHouse baseline
+## Step 1 – Check if ClickHouse baseline tables exists...
 
 ```bash
 docker exec -it clickhouse_server \
@@ -131,25 +131,71 @@ docker exec -it clickhouse_server \
   clickhouse-client --query "SELECT count() FROM uk_price_paid"
 ```
 
-Expected result:
 
-```
-30729146
-```
+--- 
 
----
-
-## Step 2 – Ingest data into ClickHouse
+## Step 2 – ClickHouse base table ingestion via url() --- This will take 5-10 minutes to ingest the 30 million row based on network speed. 
 
 ```bash
-bash 1-clickhouse-ingest.sh
-```
+docker exec clickhouse_server \
+  clickhouse-client --query "
+INSERT INTO default.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
 
-Script streams compressed CSV directly:
+    -- Convert to Date (not DateTime)
+    toDate(parseDateTimeBestEffortUS(time)) AS date,
 
-```bash
-zcat uk_price_paid.csv.gz | docker exec -i clickhouse_server \
-  clickhouse-client --query "INSERT INTO default.uk_price_paid FORMAT CSV"
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+
+    -- Map single-letter codes → Enum8 values
+    transform(
+        a,
+        ['T', 'S', 'D', 'F', 'O'],
+        ['terraced', 'semi-detached', 'detached', 'flat', 'other']
+    ) AS type,
+
+    -- UInt8 (0/1) matches your schema
+    b = 'Y' AS is_new,
+
+    transform(
+        c,
+        ['F', 'L', 'U'],
+        ['freehold', 'leasehold', 'unknown']
+    ) AS duration,
+
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+     price_string String,
+     time String,
+     postcode String,
+     a String,
+     b String,
+     c String,
+     addr1 String,
+     addr2 String,
+     street String,
+     locality String,
+     town String,
+     district String,
+     county String,
+     d String,
+     e String'
+)
+SETTINGS
+    max_http_get_redirects = 10,
+    input_format_allow_errors_num = 1000,
+    input_format_allow_errors_ratio = 0.001";
 ```
 
 Verify:
@@ -161,7 +207,7 @@ docker exec -it clickhouse_server \
 
 ---
 
-## Step 3 – Validate pg_clickhouse FDW
+## Step 3 – Validate pg_clickhouse FDW 
 
 ```bash
 PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres \
@@ -175,6 +221,8 @@ This query executes inside PostgreSQL, but is **pushed down to ClickHouse**.
 ## Step 4 – Create CedarDB ingest table (no indexes)
 
 ```sql
+PGPASSWORD=cedardbre psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+-- safe: drop if exists so repeated runs are idempotent
 DROP TABLE IF EXISTS uk_price_paid_ingest;
 
 CREATE TABLE uk_price_paid_ingest (
@@ -193,6 +241,7 @@ CREATE TABLE uk_price_paid_ingest (
     district TEXT,
     county TEXT
 );
+SQL
 ```
 
 ---
