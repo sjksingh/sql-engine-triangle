@@ -51,7 +51,7 @@ Verify - should return 30 millon rows
 docker exec -it clickhouse_server clickhouse-client --query "SELECT count() FROM uk_price_paid"
 ```
 
-#3 Check count on table using pg_clickhouse extenision & FDW
+# 3 Check count on table using pg_clickhouse extenision & FDW
 
 ```PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres << 'SQL'
 \det uk_price_paid
@@ -66,7 +66,7 @@ SELECT count(1) from uk_price_paid
 SQL
 ```
 
-#4 - Create the ingest table in CedarDB (minimal, no indexes)
+# 4 - Create the ingest table in CedarDB (minimal, no indexes)
 ```
 PGPASSWORD=cedardbre psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
 -- safe: drop if exists so repeated runs are idempotent
@@ -91,7 +91,7 @@ CREATE TABLE uk_price_paid_ingest (
 SQL
 ```
 
-5) Stream ClickHouse → CedarDB using a single command (the meat)
+#5  Stream ClickHouse → CedarDB using a single command (the meat)
 
 ```
 docker exec clickhouse_server \
@@ -128,7 +128,7 @@ docker exec -it \
 ```
 
 
-6) Create Postgres heap table + same dataset. 
+#6  Create Postgres heap table + same dataset. 
 
 ```
 PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
