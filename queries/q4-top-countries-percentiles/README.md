@@ -89,16 +89,17 @@ Heavy buffer usage and temp file writes
 
 PostgreSQL HEAP handles correctness but pays for join, grouping, and percentile calculations at large scale.
 
+## CedarDB 
 
-CedarDB
+**Engine**
 
-Engine
+- CedarDB v2025-12-19
 
-CedarDB v2025-12-19
+- Row-based, modern MVCC
 
-Row-based, modern MVCC
+- Minimal indexing
 
-Minimal indexing
+### SQL
 
 ```sql
 EXPLAIN (ANALYZE)
