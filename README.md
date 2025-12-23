@@ -128,7 +128,7 @@ docker exec -it \
 ```
 
 
-#6 - Create Postgres heap table + same dataset. 
+# 6 - Create Postgres heap table + same dataset. 
 
 ```
 PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
