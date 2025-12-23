@@ -222,3 +222,20 @@ CREATE INDEX IF NOT EXISTS idx_cedar_date_type ON uk_price_paid_ingest(date, typ
 CREATE INDEX IF NOT EXISTS idx_cedar_town_date ON uk_price_paid_ingest(town, date);
 SQL
 ```
+
+FINAL Count ... -> They should all retrun 30 million count.
+```
+docker exec -it clickhouse_server clickhouse-client --query "select count(1) from  uk_price_paid format Pretty";
+
+PGPASSWORD=cedardbre psql -h localhost -p 5433 -U postgres -d postgres << 'SQL'
+select count(1) from uk_price_paid_ingest;
+SQL
+
+PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres << 'SQL'
+select count(1) from uk_price_paid;
+SQL
+
+PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres << 'SQL'
+select count(1) from uk_price_paid_pg;
+SQL
+```
