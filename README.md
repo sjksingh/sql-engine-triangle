@@ -230,17 +230,21 @@ SQL
 
 FINAL Count ... -> They should all retrun 30 million count.
 ```
-docker exec -it clickhouse_server clickhouse-client --query "select count(1) from  uk_price_paid format Pretty";
+# ClickHouse
+docker exec clickhouse_server \
+  clickhouse-client \
+  --query "SELECT count() FROM uk_price_paid"
 
-PGPASSWORD=cedardbre psql -h localhost -p 5433 -U postgres -d postgres << 'SQL'
-select count(1) from uk_price_paid_ingest;
-SQL
+# CedarDB
+PGPASSWORD=cedardbre psql -h localhost -p 5433 -U postgres -d postgres \
+  -c "SELECT count(*) FROM uk_price_paid_ingest;"
 
-PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres << 'SQL'
-select count(1) from uk_price_paid;
-SQL
+# Postgres pg_clickhouse FDW
+PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres \
+  -c "SELECT count(*) FROM uk_price_paid;"
 
-PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres << 'SQL'
-select count(1) from uk_price_paid_pg;
-SQL
+# Postgres native HEAP table
+PGPASSWORD=pgdbre psql -h localhost -p 5434 -U postgres -d postgres \
+  -c "SELECT count(*) FROM uk_price_paid_pg;"
+
 ```
