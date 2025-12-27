@@ -69,4 +69,6 @@ CREATE TABLE IF NOT EXISTS default.uk_price_paid
 )
 ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2)
-PARTITION BY toYear(date);
+PARTITION BY toYYYYMM(date)
+SETTINGS index_granularity = 8192;
+
